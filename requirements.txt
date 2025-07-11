@@ -1,0 +1,7 @@
+# azure_func/requirements.txt
+azure-functions==1.20.0
+pandas
+numpy
+scipy
+scikit-learn
+joblib

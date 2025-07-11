@@ -1,0 +1,30 @@
+﻿# ───────── Azure Functions ─────────
+local.settings.json
+.vscode/
+bin/ obj/
+
+# ───────── Environnements Python ───
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.env
+.env/
+.venv/
+venv/
+ENV/
+env/
+
+# ───────── Dépendances / Logs ──────
+*.log
+pip-wheel-metadata/
+
+# ───────── Modèles & données ───────
+artifacts/
+temporal_hybrid*.pkl
+temporal_hybrid*.joblib
+user_history.csv
+
+# ───────── OS divers ───────────────
+.DS_Store
+Thumbs.db

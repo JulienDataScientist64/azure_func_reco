@@ -1,56 +1,90 @@
 # azure_func/HttpTrigger/__init__.py
-import os, sys, json, pickle, logging
-import azure.functions as func
+import os
+import sys
+import json
+import pickle
+import logging
+
 import pandas as pd
+import azure.functions as func
 
-# 1) Import / désérialisation
-from ..hybrid import TemporalHybrid, Weights
-sys.modules['__main__'].TemporalHybrid = TemporalHybrid
-sys.modules['__main__'].Weights        = Weights
+# ---------------------------------------------------
+# 0. Rendre hybrid.py visible et injecter classes pour pickle
+# ---------------------------------------------------
+ROOT = os.path.dirname(os.path.dirname(__file__))  # chemin vers azure_func/
+sys.path.append(ROOT)
+from hybrid import TemporalHybrid, Weights
+import importlib
+_main_mod = importlib.import_module("__main__")
+setattr(_main_mod, "TemporalHybrid", TemporalHybrid)
+setattr(_main_mod, "Weights", Weights)
 
-# 2) Chemins
-ROOT   = os.path.dirname(os.path.dirname(__file__))
-MODEL  = os.path.join(ROOT, "artifacts", "temporal_hybrid.pkl")
-HIST   = os.path.join(ROOT, "artifacts", "user_history.csv")
+# ---------------------------------------------------
+# 1. Chemins vers les artefacts
+# ---------------------------------------------------
+ARTIFACTS_DIR = os.path.join(ROOT, "artifacts")
+MODEL_PATH     = os.path.join(ARTIFACTS_DIR, "temporal_hybrid.pkl")
+CSV_PATH       = os.path.join(ARTIFACTS_DIR, "user_history.csv")
 
-with open(MODEL, "rb") as f:
+# ---------------------------------------------------
+# 2. Chargement du modèle et de l'historique
+# ---------------------------------------------------
+with open(MODEL_PATH, "rb") as f:
     hybrid_model = pickle.load(f)
 
 user_hist = (
-    pd.read_csv(HIST)
+    pd.read_csv(CSV_PATH)
       .groupby("user_id")["click_article_id"]
       .apply(list)
       .to_dict()
 )
 
+# ---------------------------------------------------
+# 3. Handler HTTP principal
+# ---------------------------------------------------
 def main(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info(f"🔔 Requête reçue: {req.url}")
+    logging.info(f"🔔 Requête reçue: {req.method} {req.url}")
 
-    # — user_id
-    uid_str = req.params.get("user_id")
-    if not uid_str or not uid_str.isdigit():
+    # Lecture possible du JSON body
+    uid = None
+    hist = None
+    if req.method == "POST":
+        try:
+            body = req.get_json()
+            uid = body.get("user_id")
+            hist = body.get("history")
+        except ValueError as e:
+            return func.HttpResponse(
+                json.dumps({"error": "invalid json", "details": str(e)}),
+                status_code=400,
+                mimetype="application/json"
+            )
+
+    # Fallback sur query params si nécessaire
+    if uid is None:
+        uid = req.params.get("user_id")
+        hist = req.params.get("history")
+
+    if uid is None:
         return func.HttpResponse(
-            json.dumps({"error": "missing or invalid user_id"}),
+            json.dumps({"error": "missing user_id"}),
             status_code=400,
             mimetype="application/json"
         )
-    uid = int(uid_str)
 
-    # — history
-    try:
-        hist = json.loads(req.params.get("history", "[]"))
-    except json.JSONDecodeError:
-        return func.HttpResponse(
-            json.dumps({"error": "invalid history parameter"}),
-            status_code=400,
-            mimetype="application/json"
-        )
+    uid = str(uid)
+    # Si history est une string, tenter un JSON parse
+    if isinstance(hist, str):
+        try:
+            hist = json.loads(hist)
+        except json.JSONDecodeError:
+            hist = None
 
-    # fallback si vide
-    if not hist and uid in user_hist:
-        hist = user_hist[uid]
+    # Utiliser l'historique stocké si pas de history valide
+    if not isinstance(hist, list):
+        hist = user_hist.get(uid, [])
 
-    # — appel modèle
+    # Appel du modèle
     try:
         recs = hybrid_model.recommend(uid, hist, k=5)
     except Exception as e:
@@ -61,7 +95,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json"
         )
 
-    # — réponse
+    # Réponse JSON
     return func.HttpResponse(
         json.dumps({"user_id": uid, "recommendations": recs}),
         status_code=200,

@@ -55,12 +55,13 @@ jobs:
         with:
           name: function-package
 
-      - name: 🚀 Deploy to Azure Functions
-        uses: azure/functions-action@v1
+      # --------------------------------------------------------------------
+      # 🔐 AZURE LOGIN (obligatoire avant functions-action)
+      # --------------------------------------------------------------------
+      - name: 🔐 Azure Login
+        uses: azure/login@v2
         with:
-          app-name: 'reco-func-2025'
-          package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_249D24A26E0748C480165B85AD10BFCE }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_CD5F858537B04A86B1C07BCB1229F452 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_34A1296F42EF43ECA05796F905F169B3 }}
 
-      - name: 🛡️ Vérification présence de function.json
-        run: |
-          test -f function.json || (echo "❌ function.json manquant !" && exit 1)

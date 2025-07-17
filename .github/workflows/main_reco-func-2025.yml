@@ -31,8 +31,6 @@ jobs:
       # --------------------------------------------------------------------
       # ⚙️  INSTALL DEPENDENCIES
       # --------------------------------------------------------------------
-      # Le requirements.txt est à la racine du dépôt. S'il se trouve plutôt
-      # dans azure_func/, changez "requirements.txt" par ce chemin.
       - name: 📦 Install dependencies from requirements.txt
         run: |
           python -m pip install --upgrade pip
@@ -43,9 +41,8 @@ jobs:
       # --------------------------------------------------------------------
       - name: 📚 Package Function App into ZIP
         run: |
-          # On se place dans le dossier contenant le code Azure Function
-          cd azure_func
-          zip -r ../function.zip .
+          # Nous sommes déjà à la racine du dépôt où se trouve function.json
+          zip -r function.zip .
 
       - name: ⬆️ Upload artifact for deployment
         uses: actions/upload-artifact@v4
@@ -66,4 +63,4 @@ jobs:
 
       - name: 🛡️ Vérification présence de function.json
         run: |
-          test -f azure_func/function.json || (echo "❌ function.json manquant !" && exit 1)
+          test -f function.json || (echo "❌ function.json manquant !" && exit 1)

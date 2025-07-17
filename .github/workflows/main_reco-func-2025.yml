@@ -63,3 +63,7 @@ jobs:
         with:
           app-name: 'reco-func-2025'
           package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
+
+      - name: 🛡️ Vérification présence de function.json
+        run: |
+          test -f azure_func/function.json || (echo "❌ function.json manquant !" && exit 1)

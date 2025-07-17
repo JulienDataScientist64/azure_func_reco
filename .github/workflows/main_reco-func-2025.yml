@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  # Indiquer le dossier qui contient votre Function App
+  # Fichier ZIP envoyé sur Azure (généré plus bas)
   AZURE_FUNCTIONAPP_PACKAGE_PATH: 'function.zip'
   PYTHON_VERSION: '3.10'
 
@@ -20,38 +20,45 @@ jobs:
       id-token: write
 
     steps:
-      - name: Checkout repository
+      - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
+      - name: 🐍 Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies
+      # --------------------------------------------------------------------
+      # ⚙️  INSTALL DEPENDENCIES
+      # --------------------------------------------------------------------
+      # Le requirements.txt est à la racine du dépôt. S'il se trouve plutôt
+      # dans azure_func/, changez "requirements.txt" par ce chemin.
+      - name: 📦 Install dependencies from requirements.txt
         run: |
           python -m pip install --upgrade pip
-          # Installer depuis le requirements situé dans le dossier azure_func
-          pip install -r azure_func/requirements.txt
+          pip install -r requirements.txt
 
-      - name: Package function app into ZIP
+      # --------------------------------------------------------------------
+      # 📦 PACKAGE THE FUNCTION APP
+      # --------------------------------------------------------------------
+      - name: 📚 Package Function App into ZIP
         run: |
-          # Créer un ZIP de la Function App en partant du dossier azure_func
+          # On se place dans le dossier contenant le code Azure Function
           cd azure_func
           zip -r ../function.zip .
 
-      - name: Upload artifact for deployment
+      - name: ⬆️ Upload artifact for deployment
         uses: actions/upload-artifact@v4
         with:
           name: function-package
           path: function.zip
 
-      - name: Download artifact for deployment
+      - name: ⬇️ Download artifact for deployment
         uses: actions/download-artifact@v4
         with:
           name: function-package
 
-      - name: Deploy to Azure Functions
+      - name: 🚀 Deploy to Azure Functions
         uses: azure/functions-action@v1
         with:
           app-name: 'reco-func-2025'

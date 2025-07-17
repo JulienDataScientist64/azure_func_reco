@@ -1,4 +1,4 @@
-# .github/workflows/deploy_azure_function.yml
+# .github/workflows/main_reco-func-2025.yml
 name: CI/CD Azure Function App - reco-func-2025
 
 on:
@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'azure_func'  # Déployer le dossier azure_func
+  # Indiquer le dossier qui contient votre Function App
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'function.zip'
   PYTHON_VERSION: '3.10'
 
 jobs:
@@ -27,16 +28,18 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies from azure_func/requirements.txt
+      - name: Install dependencies
         run: |
-          cd azure_func
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # Installer depuis le requirements situé dans le dossier azure_func
+          pip install -r azure_func/requirements.txt
 
-      - name: Zip and upload artifact
+      - name: Package function app into ZIP
         run: |
+          # Créer un ZIP de la Function App en partant du dossier azure_func
           cd azure_func
           zip -r ../function.zip .
+
       - name: Upload artifact for deployment
         uses: actions/upload-artifact@v4
         with:
@@ -52,4 +55,4 @@ jobs:
         uses: azure/functions-action@v1
         with:
           app-name: 'reco-func-2025'
-          package: 'function.zip'
+          package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'

@@ -4,98 +4,82 @@ import sys
 import json
 import pickle
 import logging
-
 import pandas as pd
 import azure.functions as func
 
-# ---------------------------------------------------
-# 0. Rendre hybrid.py visible et injecter classes pour pickle
-# ---------------------------------------------------
-ROOT = os.path.dirname(os.path.dirname(__file__))  # chemin vers azure_func/
-sys.path.append(ROOT)
-from hybrid import TemporalHybrid, Weights
-import importlib
-_main_mod = importlib.import_module("__main__")
-setattr(_main_mod, "TemporalHybrid", TemporalHybrid)
-setattr(_main_mod, "Weights", Weights)
+# Rendre hybrid.py visible et injecter classes pour pickle
+from ..hybrid import TemporalHybrid, Weights
+sys.modules['__main__'].TemporalHybrid = TemporalHybrid
+sys.modules['__main__'].Weights = Weights
 
-# ---------------------------------------------------
-# 1. Chemins vers les artefacts
-# ---------------------------------------------------
-ARTIFACTS_DIR = os.path.join(ROOT, "artifacts")
-MODEL_PATH     = os.path.join(ARTIFACTS_DIR, "temporal_hybrid.pkl")
-CSV_PATH       = os.path.join(ARTIFACTS_DIR, "user_history.csv")
+# Chemins
+ROOT = os.path.dirname(os.path.dirname(__file__))
+MODEL = os.path.join(ROOT, "artifacts", "temporal_hybrid.pkl")
+HIST = os.path.join(ROOT, "artifacts", "user_history.csv")
 
-# ---------------------------------------------------
-# 2. Chargement du modèle et de l'historique
-# ---------------------------------------------------
-with open(MODEL_PATH, "rb") as f:
-    hybrid_model = pickle.load(f)
+# Log des chemins et existence des fichiers
+logging.info(f"MODEL path: {MODEL}, exists: {os.path.exists(MODEL)}")
+logging.info(f"HIST path: {HIST}, exists: {os.path.exists(HIST)}")
 
-user_hist = (
-    pd.read_csv(CSV_PATH)
-      .groupby("user_id")["click_article_id"]
-      .apply(list)
-      .to_dict()
-)
+# Chargement du modèle
+try:
+    with open(MODEL, "rb") as f:
+        hybrid = pickle.load(f)
+        hybrid_model = pickle.load(f)
+except Exception as e:
+    logging.error(f"Erreur chargement pickle modèle: {e}", exc_info=True)
+    raise
 
-# ---------------------------------------------------
-# 3. Handler HTTP principal
-# ---------------------------------------------------
+# Chargement de l'historique utilisateur
+try:
+    df_hist = pd.read_csv(HIST)
+    user_hist = df_hist.groupby("user_id")["click_article_id"].apply(list).to_dict()
+    logging.info(f"Loaded history for {len(user_hist)} users")
+except Exception as e:
+    logging.error(f"Erreur chargement CSV historique: {e}", exc_info=True)
+    user_hist = {}
+
+# Fonction principale
+
 def main(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info(f"🔔 Requête reçue: {req.method} {req.url}")
-
-    # Lecture possible du JSON body
-    uid = None
-    hist = None
-    if req.method == "POST":
-        try:
-            body = req.get_json()
-            uid = body.get("user_id")
-            hist = body.get("history")
-        except ValueError as e:
-            return func.HttpResponse(
-                json.dumps({"error": "invalid json", "details": str(e)}),
-                status_code=400,
-                mimetype="application/json"
-            )
-
-    # Fallback sur query params si nécessaire
-    if uid is None:
-        uid = req.params.get("user_id")
-        hist = req.params.get("history")
-
-    if uid is None:
+    try:
+        uid_str = req.params.get("user_id")
+        if not uid_str or not uid_str.isdigit():
+            raise ValueError("missing or invalid user_id")
+        uid = int(uid_str)
+    except Exception as e:
+        logging.error(f"Bad request: {e}")
         return func.HttpResponse(
-            json.dumps({"error": "missing user_id"}),
+            json.dumps({"error": "missing or invalid user_id"}),
             status_code=400,
             mimetype="application/json"
         )
 
-    uid = str(uid)
-    # Si history est une string, tenter un JSON parse
-    if isinstance(hist, str):
-        try:
-            hist = json.loads(hist)
-        except json.JSONDecodeError:
-            hist = None
+    # Lecture de l'historique
+    try:
+        hist = json.loads(req.params.get("history", "[]"))
+    except json.JSONDecodeError:
+        hist = []
+        return func.HttpResponse(
+            json.dumps({"error": "invalid history parameter"}),
+            status_code=400,
+            mimetype="application/json"
+        )
+    if not hist and uid in user_hist:
+        hist = user_hist[uid]
 
-    # Utiliser l'historique stocké si pas de history valide
-    if not isinstance(hist, list):
-        hist = user_hist.get(uid, [])
-
-    # Appel du modèle
+    # Recommandation
     try:
         recs = hybrid_model.recommend(uid, hist, k=5)
     except Exception as e:
-        logging.error(f"Erreur recommend(): {e}", exc_info=True)
+        logging.error(f"Erreur during recommend(): {e}", exc_info=True)
         return func.HttpResponse(
             json.dumps({"error": "internal server error"}),
             status_code=500,
             mimetype="application/json"
         )
 
-    # Réponse JSON
+    # Réponse
     return func.HttpResponse(
         json.dumps({"user_id": uid, "recommendations": recs}),
         status_code=200,
